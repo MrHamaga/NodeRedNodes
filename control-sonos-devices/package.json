@@ -1,0 +1,19 @@
+{
+    "name"         : "sonos-control",
+    "version"      : "0.0.2",
+    "description"  : "A set of nodes to provide control of Sonos devices",
+    "dependencies": {
+    },
+	"keywords": [ 
+    "node-red",
+    "sonos",
+    "music"
+	],
+    "node-red"     : {
+        "nodes": {
+            "FindSonosDevices": "find-devices/finddevices.js",
+			"SonosCurrenttrack": "current-track/currenttrack.js",
+			"SonosPlayNext": "play-next/playnext.js"
+        }
+    }
+}
