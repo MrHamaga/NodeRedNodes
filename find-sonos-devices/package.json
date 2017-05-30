@@ -1,0 +1,19 @@
+{
+    "name"         : "Sonos control",
+    "version"      : "0.0.2",
+    "description"  : "A sample node for node-red to find sonos devices",
+    "dependencies": {
+    },
+	"keywords": [
+    "node-red",
+    "sonos",
+    "music"
+	],
+    "node-red"     : {
+        "nodes": {
+            "FindSonosDevices": "FindSonosDevices/FindSonosDevices.js",
+			"SonosCurrenttrack": "FindSonosDevices/currenttrack.js",
+			"SonosPlayNext": "FindSonosDevices/playnext.js"
+        }
+    }
+}
