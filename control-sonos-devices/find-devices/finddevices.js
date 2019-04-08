@@ -1,7 +1,14 @@
 var _ = require('underscore');
-var sonos = require('sonos');
 
-var TIMEOUT = 2000; // Search for 2 seconds, increase this value if not all devices are shown
+var url=require('url');
+const Sonos = require('sonos')
+
+console.log('Searching for Sonos devices...')
+const search = Sonos.DeviceDiscovery({ timeout: 30000 })
+
+//const { DeviceDiscovery  } = require('sonos');
+
+var TIMEOUT = 3000; // Search for 2 seconds, increase this value if not all devices are shown
 //var devices = [];
 
 // Functions to process device information
@@ -46,14 +53,26 @@ function getZoneDevices(zone, deviceList) {
 	return zoneDevices
 }
 
-function getZoneCoordinator(zone, deviceList) {
-	var coordinator
+function getZoneCoordinator(node, zone, deviceList) {
+	var coordinator;
+	
 	deviceList.forEach(function (device) {
-		if (device.CurrentZoneName === zone && device.coordinator === 'true') {
-			coordinator = device
+		//node.log('\tZone: '  + zone + ". Device: " + JSON.stringify(device))
+		if (device.CurrentZoneName === zone /* && device.coordinator === 'true'*/) {
+			coordinator = device;
 		}
 	})
-	return coordinator
+	return coordinator;
+}
+function getGroupCoordinator(group) {
+	var coordinator = {};
+	var coordinatorId = group.Coordinator;
+	//console.log('Group from device %s', coordinatorId, JSON.stringify(group, null, 2));
+	var coordinatorZoneGroupMember = _.where(group.ZoneGroupMember, {UUID: coordinatorId})[0];
+	//console.log('ZoneGroupMember from device %s', coordinatorId, JSON.stringify(coordinatorZoneGroupMember, null, 2));
+	coordinator.ip = url.parse(coordinatorZoneGroupMember.Location).hostname;
+	coordinator.ZoneGroupMember = coordinatorZoneGroupMember;
+	return coordinator;
 }
 
 
@@ -64,42 +83,25 @@ module.exports = function (RED) {
 		var node = this;
 		//node.log('\t' + JSON.stringify(config))			 		
 		node.searchtype = config.searchtype;
-		//node.log('\t' + this.searchtype)
+		// console.log('config %s', JSON.stringify(config, null, 2));
+		
 		this.on('input', function (msg) {
 			var devices = [];
-			sonos.search({
-				timeout: TIMEOUT
-			}, function (device, model) {
-				var data = {
-					ip: device.host,
-					port: device.port,
-					model: model
-				}
-
-				device.getZoneAttrs(function (err, attrs) {
-					if (!err) {
-						_.extend(data, attrs)
-					}
-					device.getZoneInfo(function (err, info) {
-						if (!err) {
-							_.extend(data, info)
-						}
-						device.getTopology(function (err, info) {
-							if (!err) {
-								info.zones.forEach(function (group) {
-									if (group.location === 'http://' + data.ip + ':' + data.port + '/xml/device_description.xml') {
-										_.extend(data, group)
-									}
-								})
-							}
-							devices.push(data)
-						})
-					})
-				})
-			})
-
+				
+			// search.on('DeviceAvailable', function (device, model) {
+			
+				// var sonosIpsStr = global.get("SonosIps");
+				// if(sonosIpsStr===undefined){
+					// sonosIpsStr = "";    
+				// }
+				// sonosIps = sonosIpsStr.split(",");
+				// sonosIps.push(device.host);
+				// global.set("SonosIps", sonosIps.join(","));
+									
+			// })
+			
 			setTimeout(function () {
-
+		
 				switch (node.searchtype.toLowerCase()) {
 					case "devices":
 						devices.forEach(function (dev) {
@@ -113,7 +115,9 @@ module.exports = function (RED) {
 									}
 								};
 							}
-							newMsg.sonosControl = dev;
+							newMsg.payload.sonosControl = dev;
+							newMsg.payload.coordinator = dev;
+							newMsg.payload.zone = dev;
 							node.send([newMsg, null]);
 						});
 						break;
@@ -122,7 +126,6 @@ module.exports = function (RED) {
 						bridges.forEach(function (bridge) {
 							getBridgeDevices(devices).forEach(function (device) {
 								node.log('\t' + JSON.stringify(device))
-
 
 								var debugMessage = {
 									payload: device
@@ -133,31 +136,39 @@ module.exports = function (RED) {
 						break;
 
 					case "zones":
-						//  node.log('\nZones (coordinator):\n--------------------')
-						getZones(devices).forEach(function (zone) {
-							var coordinator = getZoneCoordinator(zone, devices)
-							if (coordinator !== undefined) {
-								var newMsg;
-								if (typeof msg.payload === 'object') {
-									newMsg = msg;
-								} else {
-									newMsg = {
-										payload: {
-											orig: msg.payload
-										}
-									};
-								}
-								newMsg.payload.coordinator = coordinator;
-								newMsg.payload.zone = zone;
-
-								node.send([newMsg, null]);
-							}
-							getZoneDevices(zone, devices).forEach(function (device) {
-
+						node.log('\nZones (coordinator):\n--------------------')
+					
+						Sonos.DeviceDiscovery().once('DeviceAvailable', (device) => {
+							console.log('found device at ' + device.host)
+							device.getAllGroups().then(groups => {
+							
+								for(var i = 0; i < groups.length; i++){
+									var coordinator = getGroupCoordinator(groups[i]);
+									//console.log('Coordinator %s', JSON.stringify(coordinator, null, 2));
+									var newMsg;
+									if (typeof msg.payload === 'object') {
+										newMsg = msg;
+									} else {
+										newMsg = { 
+											payload: {
+												orig: msg.payload
+											}
+										};
+									}
+									newMsg.payload.coordinator = coordinator;
+									newMsg.payload.zone = groups[i].ID;
+								
+									node.send([newMsg, null]);	
+									
+								}								
+							}).catch(err => {							 
+							  console.warn('Error getting groups: %s', err)
 							})
-						})
+						})											
+						node.log('\nZones end :\n--------------------');
 				}
 			}, TIMEOUT)
+			
 		});
 	}
 	RED.nodes.registerType("find-sonos-devices", FindSonosDevices);
